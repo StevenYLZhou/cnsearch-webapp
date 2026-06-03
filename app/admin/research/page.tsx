@@ -1,0 +1,284 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+
+interface SessionInfo {
+  type: string
+  status: string
+  casesImported?: number
+  startedAt?: number
+  completedAt?: number
+  lastError?: string
+}
+
+interface SeedState {
+  status: 'idle' | 'creating' | 'monitoring' | 'done' | 'error'
+  sessions?: SessionInfo[]
+  startedAt?: number
+  completedAt?: number
+  error?: string
+}
+
+interface RefreshState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  startedAt?: number
+  completedAt?: number
+  casesFound?: number
+  totalCandidates?: number
+  error?: string
+}
+
+const SEED_BADGE: Record<string, { label: string; cls: string }> = {
+  idle:       { label: 'Not started',        cls: 'bg-gray-100 text-gray-600' },
+  creating:   { label: 'Creating sessions…', cls: 'bg-blue-100 text-blue-700' },
+  monitoring: { label: 'Agents running',     cls: 'bg-yellow-100 text-yellow-700' },
+  done:       { label: 'Complete',           cls: 'bg-green-100 text-green-700' },
+  error:      { label: 'Error',              cls: 'bg-red-100 text-red-700' },
+}
+
+const SESSION_BADGE: Record<string, { label: string; cls: string }> = {
+  monitoring: { label: 'Researching…', cls: 'bg-yellow-100 text-yellow-700' },
+  importing:  { label: 'Importing…',   cls: 'bg-blue-100 text-blue-700' },
+  done:       { label: 'Done',         cls: 'bg-green-100 text-green-700' },
+  error:      { label: 'Error',        cls: 'bg-red-100 text-red-700' },
+}
+
+const REFRESH_BADGE: Record<string, { label: string; cls: string }> = {
+  idle:    { label: 'Ready',      cls: 'bg-gray-100 text-gray-600' },
+  running: { label: 'Running…',   cls: 'bg-yellow-100 text-yellow-700' },
+  done:    { label: 'Complete',   cls: 'bg-green-100 text-green-700' },
+  error:   { label: 'Error',      cls: 'bg-red-100 text-red-700' },
+}
+
+function Badge({ info }: { info: { label: string; cls: string } }) {
+  return (
+    <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${info.cls}`}>
+      {info.label}
+    </span>
+  )
+}
+
+function elapsed(ms: number) {
+  const h = Math.floor(ms / 3600000)
+  const m = Math.floor((ms % 3600000) / 60000)
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+export default function ResearchPage() {
+  const [seed, setSeed] = useState<SeedState>({ status: 'idle' })
+  const [refresh, setRefresh] = useState<RefreshState>({ status: 'idle' })
+  const [loading, setLoading] = useState<'seed' | 'refresh' | null>(null)
+  const [backendError, setBackendError] = useState<string | null>(null)
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const [sRes, rRes] = await Promise.all([
+        fetch('/api/research?action=seed-status'),
+        fetch('/api/research?action=refresh-status'),
+      ])
+      if (sRes.ok) setSeed(await sRes.json())
+      if (rRes.ok) setRefresh(await rRes.json())
+      if (sRes.ok && rRes.ok) setBackendError(null)
+    } catch {
+      setBackendError('Cannot reach research backend')
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchStatus()
+  }, [fetchStatus])
+
+  // Poll every 15s when a job is active
+  useEffect(() => {
+    if (seed.status !== 'monitoring' && seed.status !== 'creating' && refresh.status !== 'running') return
+    const id = setInterval(fetchStatus, 15000)
+    return () => clearInterval(id)
+  }, [seed.status, refresh.status, fetchStatus])
+
+  const startSeed = async () => {
+    setLoading('seed')
+    try {
+      const res = await fetch('/api/research?action=seed', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Unknown error')
+      await fetchStatus()
+    } catch (err: any) {
+      alert(`Failed to start seed: ${err.message}`)
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const startRefresh = async () => {
+    setLoading('refresh')
+    try {
+      const res = await fetch('/api/research?action=refresh', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Unknown error')
+      await fetchStatus()
+    } catch (err: any) {
+      alert(`Failed to start refresh: ${err.message}`)
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const seedBusy = seed.status === 'creating' || seed.status === 'monitoring'
+  const refreshBusy = refresh.status === 'running'
+
+  return (
+    <div className="space-y-8 max-w-3xl">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Research & Seed</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Automated case research via Anthropic Managed Agents
+        </p>
+      </div>
+
+      {backendError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          ⚠️ {backendError} — make sure the DigitalOcean research server is running on port 3001
+        </div>
+      )}
+
+      {/* ── Initial Seed ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Initial Database Seed</h2>
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+              One-time operation. Launches 3 research agents (Section 301 · Section 232+201 · IEEPA)
+              on Anthropic's servers. Agents run for several hours autonomously — your computer
+              can go offline after pressing the button.
+            </p>
+          </div>
+          <Badge info={SEED_BADGE[seed.status] ?? SEED_BADGE.idle} />
+        </div>
+
+        {seed.sessions && seed.sessions.length > 0 && (
+          <div className="space-y-2">
+            {seed.sessions.map(s => (
+              <div
+                key={s.type}
+                className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2.5 text-sm"
+              >
+                <span className="font-medium text-gray-700 uppercase tracking-wide text-xs">
+                  Agent {s.type}
+                </span>
+                <div className="flex items-center gap-3">
+                  {(s.casesImported ?? 0) > 0 && (
+                    <span className="text-green-600 text-xs">{s.casesImported} cases imported</span>
+                  )}
+                  {s.startedAt && s.status !== 'done' && (
+                    <span className="text-gray-400 text-xs">{elapsed(Date.now() - s.startedAt)} elapsed</span>
+                  )}
+                  <Badge info={SESSION_BADGE[s.status] ?? { label: s.status, cls: 'bg-gray-100 text-gray-600' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {seed.status === 'done' && (
+          <p className="text-sm text-green-700 bg-green-50 rounded-lg px-4 py-3">
+            ✓ Seed complete. Review and approve new cases at{' '}
+            <Link href="/admin/cases" className="underline font-medium">Admin → Cases</Link>.
+          </p>
+        )}
+
+        {seed.error && (
+          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            Error: {seed.error}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={startSeed}
+            disabled={!!loading || seedBusy || seed.status === 'done'}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading === 'seed'          ? 'Starting…'         :
+             seed.status === 'creating'  ? 'Creating sessions…' :
+             seed.status === 'monitoring'? 'Agents running…'    :
+             seed.status === 'done'      ? 'Seed complete ✓'    :
+             'Seed Database (3 Agents)'}
+          </button>
+          {seedBusy && (
+            <button
+              onClick={fetchStatus}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              Refresh status
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Monthly Refresh ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Research New Cases</h2>
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+              Monthly refresh. Searches for new filings since the last refresh date across all
+              tariff categories. Takes ~15 minutes. Results appear as drafts for your review.
+            </p>
+          </div>
+          <Badge info={REFRESH_BADGE[refresh.status] ?? REFRESH_BADGE.idle} />
+        </div>
+
+        {refresh.status === 'done' && refresh.casesFound !== undefined && (
+          <p className="text-sm text-green-700 bg-green-50 rounded-lg px-4 py-3">
+            ✓ Found {refresh.totalCandidates ?? 0} candidates, imported {refresh.casesFound} new case{refresh.casesFound !== 1 ? 's' : ''} as drafts.{' '}
+            <Link href="/admin/cases" className="underline font-medium">Review in Admin → Cases</Link>.
+          </p>
+        )}
+
+        {refresh.status === 'running' && refresh.startedAt && (
+          <p className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-4 py-3">
+            Research in progress — {elapsed(Date.now() - refresh.startedAt)} elapsed. Page polls every 15s automatically.
+          </p>
+        )}
+
+        {refresh.error && (
+          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            Error: {refresh.error}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={startRefresh}
+            disabled={!!loading || refreshBusy}
+            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading === 'refresh'          ? 'Starting…'           :
+             refresh.status === 'running'   ? 'Research in progress…' :
+             'Research New Cases'}
+          </button>
+          {refreshBusy && (
+            <button
+              onClick={fetchStatus}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              Refresh status
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Info box ── */}
+      <div className="bg-gray-50 rounded-xl border border-gray-200 p-5 text-sm text-gray-600 space-y-2">
+        <p className="font-medium text-gray-700">How this works</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>All cases enter Supabase as <strong>drafts</strong> (is_published = false)</li>
+          <li>Review and approve each case at <Link href="/admin/cases" className="underline">Admin → Cases</Link> before it goes public</li>
+          <li>Each case must have ≥2 Tier-1 source URLs — the agents enforce this</li>
+          <li>Research backend runs on DigitalOcean (142.93.90.26:3001)</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
