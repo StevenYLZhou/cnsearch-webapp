@@ -7,6 +7,16 @@ import type { Case } from '@/lib/types'
 
 export const revalidate = 300
 
+type CaseListRow = Omit<Case, 'case_sources'> & {
+  case_sources: Array<{ source_tier: number }>
+}
+
+const CONFIDENCE_COLORS: Record<string, string> = {
+  High:   'bg-green-50 text-green-700',
+  Medium: 'bg-yellow-50 text-yellow-700',
+  Low:    'bg-red-50 text-red-700',
+}
+
 interface SearchParams {
   phase?: string
   dispute_type?: string
@@ -17,11 +27,11 @@ interface SearchParams {
   search?: string
 }
 
-async function getCases(filters: SearchParams): Promise<Case[]> {
+async function getCases(filters: SearchParams): Promise<CaseListRow[]> {
   const supabase = await createClient()
   let query = supabase
     .from('cases')
-    .select('*')
+    .select('*, case_sources(source_tier)')
     .eq('is_published', true)
     .order('date_filed', { ascending: false, nullsFirst: false })
 
@@ -34,7 +44,7 @@ async function getCases(filters: SearchParams): Promise<Case[]> {
   if (filters.search) query = query.textSearch('fts', filters.search, { type: 'websearch' })
 
   const { data } = await query
-  return data ?? []
+  return (data ?? []) as unknown as CaseListRow[]
 }
 
 export default async function CasesPage({
@@ -43,7 +53,7 @@ export default async function CasesPage({
   searchParams: Promise<SearchParams>
 }) {
   const params = await searchParams
-  const cases = await getCases(params)
+  const cases: CaseListRow[] = await getCases(params)
 
   return (
     <div className="space-y-6">
@@ -76,12 +86,16 @@ export default async function CasesPage({
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Type</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Venue</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Outcome</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Sources</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Filed</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {cases.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+              {cases.map((c) => {
+                const tier1Count = (c.case_sources ?? []).filter(s => s.source_tier === 1).length
+                const tier1Label = tier1Count >= 2 ? 'sufficient' : tier1Count === 1 ? 'limited' : 'insufficient'
+                return (
+                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
                     <Link href={`/cases/${c.id}`} className="hover:text-blue-600 transition-colors">
                       <div className="font-medium text-gray-900 line-clamp-1">{c.case_name}</div>
@@ -104,11 +118,28 @@ export default async function CasesPage({
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 hidden xl:table-cell">
+                    <div className="flex gap-1.5 items-center">
+                      <span
+                        aria-label={`${tier1Count} Tier-1 sources — ${tier1Label}`}
+                        className={`text-xs px-1.5 py-0.5 rounded font-medium ${tier1Count >= 2 ? 'bg-green-50 text-green-700' : tier1Count === 1 ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}`}
+                      >
+                        {tier1Count} Tier-1
+                      </span>
+                      <span
+                        aria-label={`Confidence: ${c.confidence_level ?? 'unknown'}`}
+                        className={`text-xs px-1.5 py-0.5 rounded font-medium ${CONFIDENCE_COLORS[c.confidence_level] ?? ''}`}
+                      >
+                        {c.confidence_level ?? '—'}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 hidden md:table-cell text-gray-500">
                     {c.date_filed ? c.date_filed.slice(0, 7) : '—'}
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
