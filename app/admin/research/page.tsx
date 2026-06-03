@@ -12,8 +12,16 @@ interface SessionInfo {
   lastError?: string
 }
 
+interface TestState {
+  status: 'idle' | 'creating' | 'running' | 'done' | 'error'
+  agent?: SessionInfo
+  startedAt?: number
+  completedAt?: number
+  error?: string
+}
+
 interface SeedState {
-  status: 'idle' | 'creating' | 'monitoring' | 'done' | 'error'
+  status: 'idle' | 'creating' | 'monitoring' | 'running' | 'done' | 'error'
   sessions?: SessionInfo[]
   startedAt?: number
   completedAt?: number
@@ -70,20 +78,23 @@ function elapsed(ms: number) {
 }
 
 export default function ResearchPage() {
+  const [test, setTest] = useState<TestState>({ status: 'idle' })
   const [seed, setSeed] = useState<SeedState>({ status: 'idle' })
   const [refresh, setRefresh] = useState<RefreshState>({ status: 'idle' })
-  const [loading, setLoading] = useState<'seed' | 'refresh' | null>(null)
+  const [loading, setLoading] = useState<'test' | 'seed' | 'refresh' | null>(null)
   const [backendError, setBackendError] = useState<string | null>(null)
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [sRes, rRes] = await Promise.all([
+      const [tRes, sRes, rRes] = await Promise.all([
+        fetch('/api/research?action=test-status'),
         fetch('/api/research?action=seed-status'),
         fetch('/api/research?action=refresh-status'),
       ])
+      if (tRes.ok) setTest(await tRes.json())
       if (sRes.ok) setSeed(await sRes.json())
       if (rRes.ok) setRefresh(await rRes.json())
-      if (sRes.ok && rRes.ok) setBackendError(null)
+      if (tRes.ok && sRes.ok && rRes.ok) setBackendError(null)
     } catch {
       setBackendError('Cannot reach research backend')
     }
@@ -93,12 +104,28 @@ export default function ResearchPage() {
     fetchStatus()
   }, [fetchStatus])
 
-  // Poll every 15s when a job is active
+  // Poll every 15s when any job is active
   useEffect(() => {
-    if (seed.status !== 'monitoring' && seed.status !== 'creating' && refresh.status !== 'running') return
+    const testActive = test.status === 'running' || test.status === 'creating'
+    const seedActive = seed.status === 'running' || seed.status === 'creating'
+    if (!testActive && !seedActive && refresh.status !== 'running') return
     const id = setInterval(fetchStatus, 15000)
     return () => clearInterval(id)
-  }, [seed.status, refresh.status, fetchStatus])
+  }, [test.status, seed.status, refresh.status, fetchStatus])
+
+  const startTest = async () => {
+    setLoading('test')
+    try {
+      const res = await fetch('/api/research?action=test', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Unknown error')
+      await fetchStatus()
+    } catch (err: any) {
+      alert(`Failed to start test: ${err.message}`)
+    } finally {
+      setLoading(null)
+    }
+  }
 
   const startSeed = async () => {
     setLoading('seed')
@@ -145,6 +172,59 @@ export default function ResearchPage() {
           ⚠️ {backendError} — make sure the DigitalOcean research server is running on port 3001
         </div>
       )}
+
+      {/* ── Test Run ── */}
+      <div className="bg-white rounded-xl border-2 border-dashed border-amber-300 p-6 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">Pipeline Test Run</h2>
+              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Run first</span>
+            </div>
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+              Finds exactly 2 known cases to verify the full pipeline works before committing to the full seed.
+              Takes ~30–45 min. Costs ~$1–3.
+            </p>
+          </div>
+          <Badge info={SEED_BADGE[test.status] ?? SEED_BADGE.idle} />
+        </div>
+
+        {test.agent && (
+          <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2.5 text-sm">
+            <span className="font-medium text-gray-700">Section 301 Scout → Analyst</span>
+            <div className="flex items-center gap-3">
+              {(test.agent.casesImported ?? 0) > 0 && (
+                <span className="text-green-600 text-xs">{test.agent.casesImported} cases imported</span>
+              )}
+              <Badge info={SESSION_BADGE[test.agent.status] ?? { label: test.agent.status, cls: 'bg-gray-100 text-gray-600' }} />
+            </div>
+          </div>
+        )}
+
+        {test.status === 'done' && (
+          <p className="text-sm text-green-700 bg-green-50 rounded-lg px-4 py-3">
+            ✓ Test passed. Check <Link href="/admin/cases" className="underline font-medium">Admin → Cases</Link> for the 2 draft cases, then proceed to full seed.
+          </p>
+        )}
+
+        {test.error && (
+          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            ✗ Test failed: {test.error}
+          </p>
+        )}
+
+        <button
+          onClick={startTest}
+          disabled={!!loading || test.status === 'running' || test.status === 'creating' || test.status === 'done'}
+          className="px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading === 'test'             ? 'Starting…'          :
+           test.status === 'creating'     ? 'Creating session…'  :
+           test.status === 'running'      ? 'Test running…'      :
+           test.status === 'done'         ? 'Test passed ✓'      :
+           'Run Pipeline Test (2 cases)'}
+        </button>
+      </div>
 
       {/* ── Initial Seed ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">

@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
   const endpoint =
     action === 'seed-status'    ? '/seed/status'    :
     action === 'refresh-status' ? '/refresh/status' :
+    action === 'test-status'    ? '/test/status'    :
     '/health'
 
   try {
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
   const endpoint =
     action === 'seed'    ? '/seed'    :
     action === 'refresh' ? '/refresh' :
+    action === 'test'    ? '/test'    :
     null
 
   if (!endpoint) return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
