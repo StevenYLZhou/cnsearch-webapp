@@ -1,11 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) redirect('/admin/login')
+  // proxy.ts handles auth redirect for all /admin/* except /admin/login
+  // This layout only adds the admin chrome when a user is present
+  if (!user) {
+    return <>{children}</>
+  }
 
   return (
     <div className="bg-amber-50 min-h-screen -mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-8">
