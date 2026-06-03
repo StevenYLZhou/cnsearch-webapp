@@ -14,6 +14,7 @@ interface SessionInfo {
 
 interface TestState {
   status: 'idle' | 'creating' | 'running' | 'done' | 'error'
+  mode?: 'fast' | 'standard'
   agent?: SessionInfo
   startedAt?: number
   completedAt?: number
@@ -82,6 +83,7 @@ export default function ResearchPage() {
   const [seed, setSeed] = useState<SeedState>({ status: 'idle' })
   const [refresh, setRefresh] = useState<RefreshState>({ status: 'idle' })
   const [loading, setLoading] = useState<'test' | 'seed' | 'refresh' | null>(null)
+  const [activeTestMode, setActiveTestMode] = useState<'fast' | 'standard' | null>(null)
   const [backendError, setBackendError] = useState<string | null>(null)
 
   const fetchStatus = useCallback(async () => {
@@ -115,6 +117,7 @@ export default function ResearchPage() {
 
   const startTest = async () => {
     setLoading('test')
+    setActiveTestMode('standard')
     try {
       const res = await fetch('/api/research?action=test', { method: 'POST' })
       const data = await res.json()
@@ -124,6 +127,23 @@ export default function ResearchPage() {
       alert(`Failed to start test: ${err.message}`)
     } finally {
       setLoading(null)
+      setActiveTestMode(null)
+    }
+  }
+
+  const startFastTest = async () => {
+    setLoading('test')
+    setActiveTestMode('fast')
+    try {
+      const res = await fetch('/api/research?action=test-fast', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Unknown error')
+      await fetchStatus()
+    } catch (err: any) {
+      alert(`Failed to start fast test: ${err.message}`)
+    } finally {
+      setLoading(null)
+      setActiveTestMode(null)
     }
   }
 
@@ -213,17 +233,31 @@ export default function ResearchPage() {
           </p>
         )}
 
-        <button
-          onClick={startTest}
-          disabled={!!loading || test.status === 'running' || test.status === 'creating' || test.status === 'done'}
-          className="px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {loading === 'test'             ? 'Starting…'          :
-           test.status === 'creating'     ? 'Creating session…'  :
-           test.status === 'running'      ? 'Test running…'      :
-           test.status === 'done'         ? 'Test passed ✓'      :
-           'Run Pipeline Test (2 cases)'}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={startTest}
+            disabled={!!loading || test.status === 'running' || test.status === 'creating' || (test.status === 'done' && test.mode !== 'fast')}
+            className="px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading === 'test' && activeTestMode === 'standard' ? 'Starting…'         :
+             test.status === 'creating' && test.mode !== 'fast'  ? 'Creating session…' :
+             test.status === 'running'  && test.mode !== 'fast'  ? 'Test running…'     :
+             test.status === 'done'     && test.mode !== 'fast'  ? 'Test passed ✓'     :
+             'Run Pipeline Test (2 cases)'}
+          </button>
+          <button
+            onClick={startFastTest}
+            disabled={!!loading || test.status === 'running' || test.status === 'creating'}
+            className="px-3 py-1.5 text-xs text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Skips real research — writes hardcoded JSON to verify infrastructure only"
+          >
+            {loading === 'test'         && activeTestMode === 'fast' ? 'Starting…'          :
+             test.status === 'creating' && test.mode === 'fast'      ? 'Creating…'          :
+             test.status === 'running'  && test.mode === 'fast'      ? 'Chain test running…' :
+             test.status === 'done'     && test.mode === 'fast'      ? 'Chain test passed ✓' :
+             'Quick Chain Test (~5 min)'}
+          </button>
+        </div>
       </div>
 
       {/* ── Initial Seed ── */}

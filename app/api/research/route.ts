@@ -62,9 +62,10 @@ export async function POST(request: NextRequest) {
 
   const action = new URL(request.url).searchParams.get('action')
   const endpoint =
-    action === 'seed'    ? '/seed'    :
-    action === 'refresh' ? '/refresh' :
-    action === 'test'    ? '/test'    :
+    action === 'seed'      ? '/seed'       :
+    action === 'refresh'   ? '/refresh'    :
+    action === 'test'      ? '/test'       :
+    action === 'test-fast' ? '/test/fast'  :
     null
 
   if (!endpoint) return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
