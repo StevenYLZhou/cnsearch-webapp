@@ -38,10 +38,14 @@ const SEED_BADGE: Record<string, { label: string; cls: string }> = {
 }
 
 const SESSION_BADGE: Record<string, { label: string; cls: string }> = {
-  monitoring: { label: 'Researching…', cls: 'bg-yellow-100 text-yellow-700' },
-  importing:  { label: 'Importing…',   cls: 'bg-blue-100 text-blue-700' },
-  done:       { label: 'Done',         cls: 'bg-green-100 text-green-700' },
-  error:      { label: 'Error',        cls: 'bg-red-100 text-red-700' },
+  scouting:  { label: 'Phase 1: Scouting…',  cls: 'bg-blue-100 text-blue-700' },
+  handoff:   { label: 'Handing off…',        cls: 'bg-purple-100 text-purple-700' },
+  analyzing: { label: 'Phase 2: Analyzing…', cls: 'bg-yellow-100 text-yellow-700' },
+  importing: { label: 'Importing…',          cls: 'bg-orange-100 text-orange-700' },
+  done:      { label: 'Done ✓',             cls: 'bg-green-100 text-green-700' },
+  error:     { label: 'Error',              cls: 'bg-red-100 text-red-700' },
+  // legacy keys kept for backwards compat
+  monitoring: { label: 'Running…', cls: 'bg-blue-100 text-blue-700' },
 }
 
 const REFRESH_BADGE: Record<string, { label: string; cls: string }> = {
