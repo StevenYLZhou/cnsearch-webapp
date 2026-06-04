@@ -175,7 +175,7 @@ export default function ResearchPage() {
     }
   }
 
-  const seedBusy = seed.status === 'creating' || seed.status === 'monitoring'
+  const seedBusy = seed.status === 'creating' || seed.status === 'monitoring' || seed.status === 'running'
   const refreshBusy = refresh.status === 'running'
 
   return (
