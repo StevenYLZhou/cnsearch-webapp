@@ -2,12 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { OUTCOME_COLORS } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
+import { AnalyzeButton } from '@/components/AnalyzeButton'
 
 export default async function AdminCasesPage() {
   const supabase = await createClient()
   const { data: cases } = await supabase
     .from('cases')
-    .select('id, case_code, case_name, phase, dispute_type, outcome, status, is_published, updated_at')
+    .select('id, case_code, case_name, phase, dispute_type, outcome, status, is_published, analysis_status, updated_at')
     .order('updated_at', { ascending: false })
 
   return (
@@ -36,6 +37,7 @@ export default async function AdminCasesPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Outcome</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Visibility</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Analysis</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
@@ -61,6 +63,9 @@ export default async function AdminCasesPage() {
                     <span className={`text-xs px-2 py-0.5 rounded-full ${c.is_published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                       {c.is_published ? 'Published' : 'Draft'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    <AnalyzeButton caseId={c.id} initialStatus={c.analysis_status ?? 'pending'} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">

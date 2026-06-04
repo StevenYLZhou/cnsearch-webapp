@@ -29,6 +29,23 @@ interface SeedState {
   error?: string
 }
 
+interface HarvestAgentInfo {
+  type: string
+  status: string
+  casesFound?: number
+  startedAt?: number
+  completedAt?: number
+  lastError?: string
+}
+
+interface HarvestState {
+  status: 'idle' | 'creating' | 'running' | 'done' | 'error'
+  agents?: HarvestAgentInfo[]
+  startedAt?: number
+  completedAt?: number
+  error?: string
+}
+
 interface RefreshState {
   status: 'idle' | 'running' | 'done' | 'error'
   startedAt?: number
@@ -36,6 +53,21 @@ interface RefreshState {
   casesFound?: number
   totalCandidates?: number
   error?: string
+}
+
+const HARVEST_BADGE: Record<string, { label: string; cls: string }> = {
+  idle:     { label: 'Not started',  cls: 'bg-gray-100 text-gray-600' },
+  creating: { label: 'Starting…',   cls: 'bg-blue-100 text-blue-700' },
+  running:  { label: 'Scouts running', cls: 'bg-yellow-100 text-yellow-700' },
+  done:     { label: 'Complete',    cls: 'bg-green-100 text-green-700' },
+  error:    { label: 'Error',       cls: 'bg-red-100 text-red-700' },
+}
+
+const HARVEST_AGENT_BADGE: Record<string, { label: string; cls: string }> = {
+  scouting:  { label: 'Scouting…',  cls: 'bg-blue-100 text-blue-700' },
+  importing: { label: 'Importing…', cls: 'bg-orange-100 text-orange-700' },
+  done:      { label: 'Done ✓',    cls: 'bg-green-100 text-green-700' },
+  error:     { label: 'Error',     cls: 'bg-red-100 text-red-700' },
 }
 
 const SEED_BADGE: Record<string, { label: string; cls: string }> = {
@@ -81,20 +113,23 @@ function elapsed(ms: number) {
 export default function ResearchPage() {
   const [test, setTest] = useState<TestState>({ status: 'idle' })
   const [seed, setSeed] = useState<SeedState>({ status: 'idle' })
+  const [harvest, setHarvest] = useState<HarvestState>({ status: 'idle' })
   const [refresh, setRefresh] = useState<RefreshState>({ status: 'idle' })
-  const [loading, setLoading] = useState<'test' | 'seed' | 'refresh' | null>(null)
+  const [loading, setLoading] = useState<'test' | 'seed' | 'harvest' | 'refresh' | null>(null)
   const [activeTestMode, setActiveTestMode] = useState<'fast' | 'standard' | null>(null)
   const [backendError, setBackendError] = useState<string | null>(null)
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [tRes, sRes, rRes] = await Promise.all([
+      const [tRes, sRes, hRes, rRes] = await Promise.all([
         fetch('/api/research?action=test-status'),
         fetch('/api/research?action=seed-status'),
+        fetch('/api/harvest'),
         fetch('/api/research?action=refresh-status'),
       ])
       if (tRes.ok) setTest(await tRes.json())
       if (sRes.ok) setSeed(await sRes.json())
+      if (hRes.ok) setHarvest(await hRes.json())
       if (rRes.ok) setRefresh(await rRes.json())
       if (tRes.ok && sRes.ok && rRes.ok) setBackendError(null)
     } catch {
@@ -108,12 +143,13 @@ export default function ResearchPage() {
 
   // Poll every 15s when any job is active
   useEffect(() => {
-    const testActive = test.status === 'running' || test.status === 'creating'
-    const seedActive = seed.status === 'running' || seed.status === 'creating'
-    if (!testActive && !seedActive && refresh.status !== 'running') return
+    const testActive    = test.status === 'running' || test.status === 'creating'
+    const seedActive    = seed.status === 'running' || seed.status === 'creating'
+    const harvestActive = harvest.status === 'running' || harvest.status === 'creating'
+    if (!testActive && !seedActive && !harvestActive && refresh.status !== 'running') return
     const id = setInterval(fetchStatus, 15000)
     return () => clearInterval(id)
-  }, [test.status, seed.status, refresh.status, fetchStatus])
+  }, [test.status, seed.status, harvest.status, refresh.status, fetchStatus])
 
   const startTest = async () => {
     setLoading('test')
@@ -175,7 +211,22 @@ export default function ResearchPage() {
     }
   }
 
-  const seedBusy = seed.status === 'creating' || seed.status === 'monitoring' || seed.status === 'running'
+  const startHarvest = async () => {
+    setLoading('harvest')
+    try {
+      const res = await fetch('/api/harvest', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Unknown error')
+      await fetchStatus()
+    } catch (err: any) {
+      alert(`Failed to start harvest: ${err.message}`)
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const seedBusy    = seed.status === 'creating' || seed.status === 'monitoring' || seed.status === 'running'
+  const harvestBusy = harvest.status === 'creating' || harvest.status === 'running'
   const refreshBusy = refresh.status === 'running'
 
   return (
@@ -206,7 +257,7 @@ export default function ResearchPage() {
               Takes ~30–45 min. Costs ~$1–3.
             </p>
           </div>
-          <Badge info={SEED_BADGE[test.status] ?? SEED_BADGE.idle} />
+          <Badge info={SEED_BADGE[test.status === 'running' ? 'monitoring' : test.status] ?? SEED_BADGE.idle} />
         </div>
 
         {test.agent && (
@@ -260,15 +311,91 @@ export default function ResearchPage() {
         </div>
       </div>
 
-      {/* ── Initial Seed ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+      {/* ── Harvest ── */}
+      <div className="bg-white rounded-xl border-2 border-purple-200 p-6 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Initial Database Seed</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">Harvest Cases</h2>
+              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">New</span>
+            </div>
             <p className="text-sm text-gray-500 mt-1 leading-relaxed">
-              One-time operation. Launches 3 research agents (Section 301 · Section 232+201 · IEEPA)
-              on Anthropic's servers. Agents run for several hours autonomously — your computer
-              can go offline after pressing the button.
+              Bulk metadata harvest with no case limit. 3 Scouts run in parallel until all avenues are exhausted.
+              Cases appear as <strong>Pending Analysis</strong> drafts — then use the Cases list to trigger
+              per-case Opus analysis. Costs ~$3–8 for harvest only.
+            </p>
+          </div>
+          <Badge info={HARVEST_BADGE[harvest.status] ?? HARVEST_BADGE.idle} />
+        </div>
+
+        {harvest.agents && harvest.agents.length > 0 && (
+          <div className="space-y-2">
+            {harvest.agents.map(a => (
+              <div key={a.type} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2.5 text-sm">
+                <span className="font-medium text-gray-700 uppercase tracking-wide text-xs">
+                  Scout {a.type}
+                </span>
+                <div className="flex items-center gap-3">
+                  {(a.casesFound ?? 0) > 0 && (
+                    <span className="text-green-600 text-xs">{a.casesFound} cases</span>
+                  )}
+                  {a.startedAt && a.status !== 'done' && (
+                    <span className="text-gray-400 text-xs">{elapsed(Date.now() - a.startedAt)} elapsed</span>
+                  )}
+                  <Badge info={HARVEST_AGENT_BADGE[a.status] ?? { label: a.status, cls: 'bg-gray-100 text-gray-600' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {harvest.status === 'done' && (
+          <p className="text-sm text-green-700 bg-green-50 rounded-lg px-4 py-3">
+            ✓ Harvest complete. Cases are pending analysis — go to{' '}
+            <Link href="/admin/cases" className="underline font-medium">Admin → Cases</Link>{' '}
+            and click <strong>Analyze</strong> on each case you want to process.
+          </p>
+        )}
+
+        {harvest.error && (
+          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            Error: {harvest.error}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={startHarvest}
+            disabled={!!loading || harvestBusy}
+            className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading === 'harvest'        ? 'Starting…'         :
+             harvest.status === 'creating' ? 'Creating sessions…' :
+             harvest.status === 'running'  ? 'Scouts running…'   :
+             harvest.status === 'done'     ? 'Harvest again'     :
+             'Harvest All Cases'}
+          </button>
+          {harvestBusy && (
+            <button
+              onClick={fetchStatus}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              Refresh status
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Initial Seed (deprecated — use Harvest instead) ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5 opacity-60">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">Initial Database Seed</h2>
+              <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full font-medium">Deprecated — use Harvest instead</span>
+            </div>
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+              Legacy pipeline: Scout → immediate Opus Analyst (coupled, 15-20 case limit). Replaced by Harvest + On-Demand Analyze above.
             </p>
           </div>
           <Badge info={SEED_BADGE[seed.status] ?? SEED_BADGE.idle} />
@@ -394,7 +521,7 @@ export default function ResearchPage() {
           <li>All cases enter Supabase as <strong>drafts</strong> (is_published = false)</li>
           <li>Review and approve each case at <Link href="/admin/cases" className="underline">Admin → Cases</Link> before it goes public</li>
           <li>Each case must have ≥2 Tier-1 source URLs — the agents enforce this</li>
-          <li>Research backend runs on DigitalOcean (142.93.90.26:3001)</li>
+          <li>Research backend runs on DigitalOcean (port 3001)</li>
         </ul>
       </div>
     </div>
