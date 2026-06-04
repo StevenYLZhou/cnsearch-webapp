@@ -64,8 +64,8 @@ export default async function AdminCasesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">
+                      <Link href={`/admin/cases/${c.id}`} className="text-gray-700 hover:text-gray-900 text-xs font-medium">Preview</Link>
                       <Link href={`/admin/cases/${c.id}/edit`} className="text-blue-600 hover:text-blue-700 text-xs font-medium">Edit</Link>
-                      <Link href={`/cases/${c.id}`} target="_blank" className="text-gray-400 hover:text-gray-600 text-xs">View</Link>
                     </div>
                   </td>
                 </tr>
