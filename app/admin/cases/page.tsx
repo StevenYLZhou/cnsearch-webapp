@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { OUTCOME_COLORS } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import { AnalyzeButton } from '@/components/AnalyzeButton'
+import BulkPublishButton from '@/components/BulkPublishButton'
 
 export default async function AdminCasesPage() {
   const supabase = await createClient()
@@ -11,16 +12,23 @@ export default async function AdminCasesPage() {
     .select('id, case_code, case_name, phase, dispute_type, outcome, status, is_published, analysis_status, updated_at')
     .order('updated_at', { ascending: false })
 
+  const draftCount = (cases ?? []).filter(
+    (c: any) => !c.is_published && c.analysis_status === 'done'
+  ).length
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">All Cases</h1>
-        <Link
-          href="/admin/cases/new"
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
-        >
-          + New Case
-        </Link>
+        <div className="flex items-center gap-3">
+          <BulkPublishButton draftCount={draftCount} />
+          <Link
+            href="/admin/cases/new"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            + New Case
+          </Link>
+        </div>
       </div>
 
       {(!cases || cases.length === 0) ? (
