@@ -31,6 +31,12 @@ export function AnalyzeButton({ caseId, initialStatus }: Props) {
     }
   }, [caseId])
 
+  // On mount: fetch real status once (handles external triggers / stale server render)
+  useEffect(() => {
+    pollStatus()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While analyzing: poll every 5s
   useEffect(() => {
     if (status !== 'analyzing') return
     const id = setInterval(pollStatus, 5000)
